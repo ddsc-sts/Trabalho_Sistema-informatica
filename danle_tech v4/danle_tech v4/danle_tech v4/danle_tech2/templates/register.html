@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Cadastre-se</h1>
+<form method="post" class="form-card">
+  <label>Nome<input type="text" name="name" required></label>
+  <label>Email<input type="email" name="email" required></label>
+  <label>Senha<input type="password" name="password" required></label>
+  <!-- NÃO incluir campo is_admin aqui -->
+  <button class="btn">Cadastrar</button>
+</form>
+{% endblock %}

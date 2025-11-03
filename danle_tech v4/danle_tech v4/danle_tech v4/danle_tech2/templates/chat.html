@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="page-title">Bate-papo</h1>
+
+<div class="chat-container">
+  <div class="messages" id="messages">
+    {% for msg in messages %}
+      <div class="message {% if msg.user_id == session['user']['id'] %}own{% endif %}">
+        <span class="user">{{ msg.user_name }}:</span>
+        <span class="text">{{ msg.message }}</span>
+        <span class="time">{{ msg.created_at.strftime('%d/%m %H:%M') }}</span>
+      </div>
+    {% else %}
+      <p>Nenhuma mensagem ainda. Seja o primeiro a escrever!</p>
+    {% endfor %}
+  </div>
+
+  <form action="{{ url_for('send_chat') }}" method="post" class="chat-form">
+    <input type="text" name="message" placeholder="Digite sua mensagem..." required>
+    <button type="submit" class="btn">Enviar</button>
+  </form>
+</div>
+
+<script>
+const messagesDiv = document.getElementById('messages');
+messagesDiv.scrollTop = messagesDiv.scrollHeight;
+</script>
+{% endblock %}

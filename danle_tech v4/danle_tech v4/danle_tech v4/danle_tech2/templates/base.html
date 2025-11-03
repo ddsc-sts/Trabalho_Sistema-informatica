@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Danle Tech - {{ title if title else 'Loja de Informática' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body id="body">
+
+  <!-- ===== Menu lateral ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">DT</div>
+      <span class="brand-text">Danle Tech</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <h4>Categorias</h4>
+      <a href="{{ url_for('index') }}">Todos Produtos</a>
+      <a href="{{ url_for('category', name='pc_parts') }}">Partes de PC</a>
+      <a href="{{ url_for('category', name='cellphone_parts') }}">Peças de Celular</a>
+      <a href="{{ url_for('category', name='utilities') }}">Utilitários</a>
+      <a href="{{ url_for('category', name='used') }}">Produtos Usados</a>
+
+      <h4>Conta</h4>
+      {% if session.get('user') %}
+        <a href="{{ url_for('profile') }}">Configurações</a>
+        <a href="{{ url_for('change_password') }}">Alterar Senha</a>
+        <a href="{{ url_for('chat') }}">Bate-papo</a>
+        <a href="{{ url_for('logout') }}">Sair</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Entrar</a>
+        <a href="{{ url_for('register') }}">Registrar</a>
+      {% endif %}
+    </nav>
+  </aside>
+
+  <!-- ===== Conteúdo principal ===== -->
+  <main class="main-content">
+    <header class="top-bar">
+      <label class="theme-switch">
+        <input type="checkbox" id="theme-toggle">
+        <span class="slider">🌙</span>
+      </label>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashwrap">
+          {% for category, msg in messages %}
+            <div class="flash {{ category }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>© {{ (config or {}).get('SITE_NAME','Danle Tech') }} - Todos os direitos reservados</p>
+  </footer>
+
+  <script>
+    const toggle = document.getElementById('theme-toggle');
+    if (localStorage.getItem('theme') === 'dark') {
+      document.body.classList.add('dark');
+      toggle.checked = true;
+    }
+    toggle.addEventListener('change', () => {
+      document.body.classList.toggle('dark', toggle.checked);
+      localStorage.setItem('theme', toggle.checked ? 'dark' : 'light');
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Histórico de Compras</h1>
+
+{% if orders and orders|length > 0 %}
+  <table class="cart-table" id="history-table">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Forma de Pagamento</th>
+        <th>Total</th>
+      
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td>{{ order.created_at.strftime('%d/%m/%Y %H:%M') if order.created_at else '—' }}</td>
+        <td>{{ order.payment_method|capitalize }}</td>
+        <td>R$ {{ '%.2f'|format(order.total) }}</td>
+        
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>Nenhuma compra encontrada.</p>
+{% endif %}
+
+{% endblock %}

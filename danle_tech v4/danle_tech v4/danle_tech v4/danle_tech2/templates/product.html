@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="product-detail">
+  {% if product.image_url %}
+    {% if product.image_url.startswith('http') %}
+      <img src="{{ product.image_url }}" alt="{{ product.name }}">
+    {% else %}
+      <img src="{{ url_for('static', filename='images/' + product.image_url) }}" alt="{{ product.name }}">
+    {% endif %}
+  {% else %}
+    <img src="{{ url_for('static', filename='images/default_product.png') }}" alt="Sem imagem">
+  {% endif %}
+
+  <div class="product-info">
+    <h1>{{ product.name }}</h1>
+    <p class="price">💰 R$ {{ '%.2f'|format(product.price) }}</p>
+    {% if product.description %}
+      <p class="desc">📘 {{ product.description }}</p>
+    {% endif %}
+    <p class="stock">📦 Em estoque: {{ product.stock }}</p>
+
+    <form action="{{ url_for('add_to_cart', product_id=product.id) }}" method="post">
+      <label for="qty">Quantidade:</label>
+      <input type="number" name="qty" id="qty" min="1" value="1">
+      <button class="btn">Adicionar ao carrinho</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

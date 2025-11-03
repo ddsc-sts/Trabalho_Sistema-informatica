@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="page-title">Compra Confirmada ✅</h1>
+
+{% if order %}
+  <p><strong>ID do Pedido:</strong> {{ order.id }}</p>
+  <p><strong>Data:</strong> {{ order.created_at.strftime('%d/%m/%Y %H:%M') }}</p>
+  <p><strong>Forma de Pagamento:</strong> {{ order.payment_method|capitalize }}</p>
+  <p><strong>Total:</strong> R$ {{ '%.2f'|format(order.total) }}</p>
+  <p><strong>Status:</strong> {{ order.status }}</p>
+
+  <h3>Itens do Pedido:</h3>
+  <ul>
+  {% for it in items %}
+    <li>{{ it.name }} — {{ it.quantity }}x R$ {{ '%.2f'|format(it.price) }}</li>
+  {% endfor %}
+  </ul>
+{% else %}
+  <p>Pedido não encontrado.</p>
+{% endif %}
+
+<div style="margin-top:20px;">
+  <a class="btn-ghost" href="{{ url_for('index') }}">Voltar à loja</a>
+</div>
+{% endblock %}

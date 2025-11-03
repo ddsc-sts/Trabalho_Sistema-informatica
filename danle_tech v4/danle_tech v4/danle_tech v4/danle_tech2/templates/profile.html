@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Manutenções</h1>
+
+<a class="btn" href="{{ url_for('request_maintenance') }}">Solicitar Manutenção</a>
+<h2>Minhas Solicitações</h2>
+<ul class="maintenance-list">
+  {% for m in maintenances %}
+    <li>
+      <strong>{{ m.title }}</strong> - {{ m.status }} {% if m.expected_delivery %} (Entrega: {{ m.expected_delivery }}) {% endif %}
+      <p>{{ m.description }}</p>
+    </li>
+  {% else %}
+    <p>Sem solicitações.</p>
+  {% endfor %}
+</ul>
+{% endblock %}

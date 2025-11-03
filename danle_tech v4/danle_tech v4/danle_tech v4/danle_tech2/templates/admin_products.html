@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gerenciar Produtos</h1>
+
+<!-- Formulário para adicionar produto -->
+<form action="{{ url_for('admin_create_product') }}" method="post" enctype="multipart/form-data" class="form-card">
+  <label>Nome<input name="name" required></label>
+  <label>Descrição<textarea name="description" placeholder="Digite uma breve descrição"></textarea></label>
+  <label>Preço<input name="price" type="number" step="0.01" required></label>
+  <label>Estoque<input name="stock" type="number" required></label>
+  <label>Categoria<input name="category" placeholder="Ex: Eletrônicos, Roupas..." required></label>
+  <label>Imagem (Upload)<input name="image_file" type="file" accept="image/*"></label>
+  <button class="btn">Adicionar Produto</button>
+</form>
+
+<hr>
+
+<!-- Formulário para atualizar todos (CONTÉM APENAS os inputs que atualizam) -->
+<form id="update-all-form" action="{{ url_for('admin_update_all_products') }}" method="post" enctype="multipart/form-data">
+  <div class="admin-table-wrapper">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nome</th>
+          <th>Descrição</th>
+          <th>Preço</th>
+          <th>Estoque</th>
+          <th>Categoria</th>
+          <th>Imagem</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+        <tr>
+          <td>
+            {{ p.id }}
+            <!-- envia lista de ids se quiser no backend (opcional) -->
+            <input type="hidden" name="ids" value="{{ p.id }}">
+          </td>
+
+          <td><input name="name_{{ p.id }}" value="{{ p.name }}" required></td>
+
+          <td>
+            <textarea name="description_{{ p.id }}" rows="2">{{ p.description }}</textarea>
+          </td>
+
+          <td><input name="price_{{ p.id }}" type="number" step="0.01" value="{{ p.price }}"></td>
+
+          <td><input name="stock_{{ p.id }}" type="number" value="{{ p.stock }}"></td>
+
+          <td><input name="category_{{ p.id }}" value="{{ p.category }}"></td>
+
+          <td>
+            {% if p.image_url %}
+              {% if p.image_url.startswith('http') %}
+                <img src="{{ p.image_url }}" width="60" height="60" style="object-fit:cover;">
+              {% else %}
+                <img src="{{ url_for('static', filename='images/' ~ p.image_url) }}" width="60" height="60" style="object-fit:cover;">
+              {% endif %}
+            {% endif %}
+            <!-- input de arquivo faz upload no update-all também -->
+            <input type="file" name="image_file_{{ p.id }}" accept="image/*">
+          </td>
+
+          <td>
+            <!-- botão que SUBMET o form de delete separado (form attribute) -->
+            <button type="submit"
+                    form="delete-{{ p.id }}"
+                    class="btn delete-btn"
+                    onclick="return confirm('Tem certeza que deseja excluir este produto?')">
+              🗑️ Excluir
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <button class="btn update-all" type="submit">💾 Atualizar Tudo</button>
+</form>
+
+<!-- -----------------------------------------------
+     FORMS DE DELETE SEPARADOS (colocados fora do form de update)
+     Cada produto tem um form com id="delete-<id>" — os botões na tabela apontam para eles
+     ----------------------------------------------- -->
+{% for p in products %}
+  <form id="delete-{{ p.id }}" action="{{ url_for('admin_delete_product', product_id=p.id) }}" method="post" style="display:none;">
+    <!-- você pode adicionar um input hidden se quiser -->
+    <input type="hidden" name="_delete_product_id" value="{{ p.id }}">
+  </form>
+{% endfor %}
+
+{% endblock %}

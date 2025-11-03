@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Painel Administrativo</h1>
+<div class="admin-grid">
+  <a class="admin-card" href="{{ url_for('admin_products') }}">Gerenciar Produtos</a>
+  <a class="admin-card" href="{{ url_for('admin_maintenance') }}">Gerenciar Manutenções</a>
+  <a href="{{ url_for('admin_orders') }}" class="btn">Histórico de Pedidos</a>
+
+</div>
+{% endblock %}
+
+

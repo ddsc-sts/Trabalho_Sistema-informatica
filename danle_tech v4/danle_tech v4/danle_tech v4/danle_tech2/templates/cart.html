@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h1 style="margin-bottom: 20px;">Carrinho</h1>
+
+  {% if items %}
+    <table class="cart-table">
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Qtd</th>
+          <th>Subtotal</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td>{{ it.product.name }}</td>
+          <td>{{ it.qty }}</td>
+          <td>R$ {{ '%.2f'|format(it.subtotal) }}</td>
+          <td>
+            <form action="{{ url_for('remove_from_cart', product_id=it.product.id) }}" method="post" class="inline-form">
+              <button class="btn-ghost">Remover</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="form-card" style="margin-top: 30px;">
+      <p class="total" style="font-weight: 700; font-size: 1.2rem;">
+        Total: R$ {{ '%.2f'|format(total) }}
+      </p>
+
+      <form action="{{ url_for('checkout') }}" method="POST" id="checkout-form">
+        <label>
+          Forma de pagamento:
+          <select name="payment_method" id="payment-method">
+            <option value="dinheiro">Dinheiro</option>
+            <option value="cartao">Cartão</option>
+            <option value="pix">Pix</option>
+          </select>
+        </label>
+
+        {% if session.get('user') %}
+          <button type="submit" class="btn" style="margin-top: 10px;">Finalizar Compra</button>
+        {% else %}
+          <p>Faça login para finalizar a compra.</p>
+          <a class="btn" href="{{ url_for('login') }}">Entrar</a>
+        {% endif %}
+      </form>
+
+      
+    </div>
+  {% else %}
+    <div class="card" style="text-align:center; margin-top:30px;">
+      <p>Seu carrinho está vazio.</p>
+      <a href="{{ url_for('index') }}" class="btn" style="margin-top:10px;">Voltar às compras</a>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Script para exibir QR Code do Pix -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const select = document.getElementById("payment-method");
+  const pixCard = document.getElementById("pix-card");
+  const pixImg = document.getElementById("pix-img");
+  const total = {{ '%.2f'|format(total) }};
+
+  if (select) {
+    select.addEventListener("change", () => {
+      if (select.value === "pix") {
+        pixCard.style.display = "block";
+        pixImg.src = `/qrcode/${total}`;
+      } else {
+        pixCard.style.display = "none";
+      }
+    });
+  }
+});
+</script>
+
+
+{% endblock %}

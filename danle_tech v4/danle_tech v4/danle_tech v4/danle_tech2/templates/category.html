@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="page-title">Categoria: {{ category_name }}</h1>
+
+<div class="products-grid" id="product-list">
+  {% for p in products %}
+    <article class="card">
+      <img src="{% if p.image_url %}{{ url_for('static', filename='images/' ~ p.image_url) }}{% else %}{{ url_for('static', filename='images/default_product.png') }}{% endif %}" alt="{{ p.name }}">
+      <h3>{{ p.name }}</h3>
+      <p class="price">R$ {{ '%.2f'|format(p.price) }}</p>
+      <div class="card-actions">
+        <a class="btn" href="{{ url_for('product', product_id=p.id) }}">Ver</a>
+        <form action="{{ url_for('add_to_cart', product_id=p.id) }}" method="post" class="inline-form">
+          <input type="hidden" name="qty" value="1">
+          <button class="btn-ghost">Adicionar</button>
+        </form>
+      </div>
+    </article>
+  {% else %}
+    <p>Nenhum produto encontrado nesta categoria.</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Manutenções (Admin)</h1>
+<table class="admin-table">
+  <thead><tr><th>ID</th><th>Cliente</th><th>Título</th><th>Status</th><th>Entrega</th><th>Ações</th></tr></thead>
+  <tbody>
+    {% for m in maintenances %}
+      <tr>
+        <td>{{ m.id }}</td>
+        <td>{{ m.user_name }} ({{ m.user_email }})</td>
+        <td>{{ m.title }}<p>{{ m.description }}</p></td>
+        <td>{{ m.status }}</td>
+        <td>{{ m.expected_delivery or '-' }}</td>
+        <td>
+          <form action="{{ url_for('admin_update_maintenance', mid=m.id) }}" method="post">
+            <select name="status">
+              <option value="pendente" {% if m.status=='pendente' %}selected{% endif %}>Pendente</option>
+              <option value="em_progresso" {% if m.status=='em_progresso' %}selected{% endif %}>Em Progresso</option>
+              <option value="pronto" {% if m.status=='pronto' %}selected{% endif %}>Pronto</option>
+            </select>
+            <input type="date" name="expected_delivery" value="{{ m.expected_delivery }}">
+            <button class="btn-ghost">Atualizar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

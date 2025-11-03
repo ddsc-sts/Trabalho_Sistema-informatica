@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Pagamento via PIX</h1>
+
+<p><strong>Pedido #{{ order.id }}</strong></p>
+<p>Total: R$ {{ "%.2f"|format(order.total) }}</p>
+
+<p>Escaneie o QR Code abaixo para pagar:</p>
+<img src="data:image/png;base64,{{ qr_b64 }}" alt="QR Code PIX" width="250">
+
+<form action="{{ url_for('confirmed', order_id=order.id) }}" method="get">
+  <button type="submit" class="btn btn-success">Confirmar Pagamento</button>
+</form>
+{% endblock %}

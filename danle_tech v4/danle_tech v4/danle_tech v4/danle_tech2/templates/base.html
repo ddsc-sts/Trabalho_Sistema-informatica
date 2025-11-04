@@ -39,11 +39,22 @@
 
   <!-- ===== Conteúdo principal ===== -->
   <main class="main-content">
+
     <header class="top-bar">
-      <label class="theme-switch">
-        <input type="checkbox" id="theme-toggle">
-        <span class="slider">🌙</span>
-      </label>
+      <div class="top-bar-right">
+        {% if session.get('user') %}
+          <span class="user-name">Olá, {{ session['user']['name'] }}</span>
+          <a href="{{ url_for('profile') }}" class="btn-top">Perfil</a>
+          <a href="{{ url_for('logout') }}" class="btn-top">Sair</a>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="btn-top">Entrar</a>
+          <a href="{{ url_for('register') }}" class="btn-top">Cadastrar</a>
+        {% endif %}
+        <label class="theme-switch" aria-label="Alternar tema">
+          <input type="checkbox" id="theme-toggle">
+          <span class="slider">🌙</span>
+        </label>
+      </div>
     </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

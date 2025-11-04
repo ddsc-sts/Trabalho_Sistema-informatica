@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Danle Tech | Admin - {{ title if title else 'Painel Administrativo' }}</title>
+
+  <!-- Fontes e estilos -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+
+<body class="admin-body" id="body">
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar admin-sidebar">
+    <div class="brand">
+      <div class="logo">DT</div>
+      <span class="brand-text">Admin</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <h4>Painel</h4>
+      <a href="{{ url_for('admin_panel') }}">🏠 Início</a>
+      <a href="{{ url_for('admin_products') }}">🧩 Produtos</a>
+      <a href="{{ url_for('admin_maintenance') }}">🛠️ Manutenções</a>
+      <a href="{{ url_for('admin_orders') }}">📦 Pedidos</a>
+
+      <h4>Sistema</h4>
+      <a href="{{ url_for('profile') }}">⚙️ Configurações</a>
+      <a href="{{ url_for('logout') }}">🚪 Sair</a>
+    </nav>
+  </aside>
+
+  <!-- ========== CONTEÚDO PRINCIPAL ========== -->
+  <main class="main-content admin-main">
+    <header class="admin-top-bar">
+      <div class="admin-top-left">
+        <h2>{{ title if title else 'Painel Administrativo' }}</h2>
+      </div>
+
+      <div class="admin-top-right">
+        {% if session.get('user') %}
+          <span class="admin-user">👤 {{ session['user']['name'] }}</span>
+        {% endif %}
+        <label class="theme-switch" aria-label="Alternar tema">
+          <input type="checkbox" id="theme-toggle">
+          <span class="slider">🌙</span>
+        </label>
+      </div>
+    </header>
+
+    <section class="admin-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flashwrap">
+            {% for category, msg in messages %}
+              <div class="flash {{ category }}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </section>
+
+    <footer class="admin-footer">
+      <p>© {{ (config or {}).get('SITE_NAME','Danle Tech') }} - Painel Administrativo</p>
+    </footer>
+  </main>
+
+  <!-- Tema Escuro -->
+  <script>
+    const toggle = document.getElementById('theme-toggle');
+    if (localStorage.getItem('theme') === 'dark') {
+      document.body.classList.add('dark');
+      toggle.checked = true;
+    }
+    toggle.addEventListener('change', () => {
+      document.body.classList.toggle('dark', toggle.checked);
+      localStorage.setItem('theme', toggle.checked ? 'dark' : 'light');
+    });
+  </script>
+
+</body>
+</html>

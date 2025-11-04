@@ -230,17 +230,16 @@
   
   /* =========================================================
      MAIN CONTENT - Layout Responsivo
-     ========================================================= */
-  .main-content {
-    margin-left: 260px;
-    padding: 2rem;
-    flex: 1;
-    position: relative;
-    z-index: 1;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
+     ========================================================= */ 
+     .main-content {
+      margin-left: 260px;
+      padding: 2rem;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: block; /* ✅ muda para block */
+    }
   
   /* =========================================================
      TOP BAR - Barra Superior
@@ -1114,3 +1113,75 @@ body.dark .promo-card .btn {
     transform: translateY(-6px) scale(1.02);
     box-shadow: var(--card-hover-shadow);
   }
+  /* ===== CORREÇÃO DO LAYOUT PRINCIPAL ===== */
+.main-content {
+  margin-left: 260px;
+  padding: 2rem;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: block; /* deixa o conteúdo fluir */
+}
+
+/* Faz o topo flutuar sem interferir no fluxo */
+.top-bar {
+  position: fixed;       /* fixa no topo */
+  top: 20px;
+  right: 40px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 200;          /* acima de tudo */
+  background: rgba(0,0,0,0.1); /* leve transparência opcional */
+  backdrop-filter: blur(6px);
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+
+/* Dá um espaçamento extra pra que o conteúdo não fique atrás da top-bar */
+.products-grid,
+.promotions {
+  margin-top: 80px;
+}
+
+/* Garante que o grid use toda a largura possível */
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 28px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  justify-items: center;
+  align-items: start;
+}
+
+/* =========================================================
+   FIX DEFINITIVO - Produtos lado a lado real
+   ========================================================= */
+
+/* neutraliza o flex no main para o grid ocupar toda a linha */
+.main-content {
+  display: block !important;
+}
+
+/* grid de produtos com largura total da área visível */
+.products-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
+  gap: 24px !important;
+  width: 100% !important;
+  margin-top: 2rem;
+  justify-items: center;
+  align-items: start;
+  box-sizing: border-box;
+}
+
+/* garante que cada card ocupe sua célula inteira */
+.products-grid .card {
+  width: 100% !important;
+  max-width: 280px;
+}
+
+  

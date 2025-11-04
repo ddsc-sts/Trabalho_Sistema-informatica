@@ -118,30 +118,39 @@ def register():
     return render_template('register.html')
 
 # Login
-@app.route('/login', methods=['GET','POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email','').lower()
-        password = request.form.get('password','')
+        email = request.form.get('email', '').lower()
+        password = request.form.get('password', '')
+
         conn = get_db()
         cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
         cur.close(); conn.close()
+
         if user and check_password_hash(user['password_hash'], password):
-            session['user'] = {'id': user['id'], 'email': user['email'], 'name': user['name'], 'is_admin': bool(user['is_admin'])}
+            # ✅ Correto: bloco dentro do IF
+            session['user'] = {
+                'id': user['id'],
+                'email': user['email'],
+                'name': user['name'],
+                'is_admin': bool(user['is_admin'])
+            }
+
             flash('Login efetuado com sucesso.', 'success')
-            return redirect(url_for('index'))
+
+            # 🔹 Se for admin, manda para o painel administrativo
+            if session['user']['is_admin']:
+                return redirect(url_for('admin_panel'))
+            else:
+                return redirect(url_for('index'))
         else:
             flash('Email ou senha incorretos.', 'danger')
+            return redirect(url_for('login'))
+
     return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    flash('Sessão encerrada.', 'info')
-    return redirect(url_for('index'))
-
 # ----------------- Cart -----------------
 @app.route('/cart')
 def cart():
@@ -754,3 +763,8 @@ def change_password():
 if __name__ == '__main__':
     app.run(debug=True)
 
+
+@app.route("/admin")
+@login_required  # se quiser restringir
+def admin_panel():
+    return render_template("admin.html", title="Painel Administrativo")

@@ -1,3 +1,7 @@
+"""
+PARTE 1/3 - Imports, Configurações e Helpers
+"""
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
 import mysql.connector
 from mysql.connector import Error
@@ -55,46 +59,64 @@ def log_action(user_id, action, details=''):
         print('Log error:', e)
     finally:
         try:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
         except:
             pass
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
-# ----------------- Routes -----------------
+# ----------------- Rotas Básicas -----------------
 @app.route('/')
 def index():
     conn = get_db()
     cur = conn.cursor(dictionary=True)
     cur.execute("SELECT * FROM products ORDER BY created_at DESC LIMIT 20")
     products = cur.fetchall()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return render_template('index.html', products=products)
 
-# Product details
 @app.route('/produto/<int:product_id>')
 def product(product_id):
     conn = get_db()
     cur = conn.cursor(dictionary=True)
     cur.execute("SELECT * FROM products WHERE id = %s", (product_id,))
     product = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     if not product:
         flash('Produto não encontrado.', 'warning')
         return redirect(url_for('index'))
     return render_template('product.html', product=product)
 
-# Register
+@app.route('/categoria/<string:name>')
+def category(name):
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM products WHERE category = %s ORDER BY created_at DESC", (name,))
+    products = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('category.html', products=products, category_name=name)
+
+# ----------------- Autenticação -----------------
 @app.route('/register', methods=['GET','POST'])
 def register():
     if request.method == 'POST':
         name = request.form.get('name','').strip()
         email = request.form.get('email','').strip().lower()
         password = request.form.get('password','')
+        
         if not name or not email or not password:
             flash('Preencha todos os campos.', 'warning')
             return redirect(url_for('register'))
+        
+        if len(password) < 6:
+            flash('A senha deve ter no mínimo 6 caracteres.', 'warning')
+            return redirect(url_for('register'))
+        
         pw_hash = generate_password_hash(password)
         try:
             conn = get_db()
@@ -112,26 +134,30 @@ def register():
             flash('Erro ao cadastrar: ' + str(e), 'danger')
         finally:
             try:
-                cur.close(); conn.close()
+                cur.close()
+                conn.close()
             except:
                 pass
     return render_template('register.html')
 
-# Login
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email', '').lower()
+        email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
+
+        if not email or not password:
+            flash('Preencha todos os campos.', 'warning')
+            return redirect(url_for('login'))
 
         conn = get_db()
         cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
 
         if user and check_password_hash(user['password_hash'], password):
-            # ✅ Correto: bloco dentro do IF
             session['user'] = {
                 'id': user['id'],
                 'email': user['email'],
@@ -139,9 +165,13 @@ def login():
                 'is_admin': bool(user['is_admin'])
             }
 
+            log_action(user['id'], 'login', f'Login realizado')
             flash('Login efetuado com sucesso.', 'success')
 
-            # 🔹 Se for admin, manda para o painel administrativo
+            next_page = request.args.get('next')
+            if next_page:
+                return redirect(next_page)
+            
             if session['user']['is_admin']:
                 return redirect(url_for('admin_panel'))
             else:
@@ -151,22 +181,33 @@ def login():
             return redirect(url_for('login'))
 
     return render_template('login.html')
-# ----------------- Cart -----------------
+
+@app.route('/logout')
+@login_required
+def logout():
+    user_id = session.get('user', {}).get('id')
+    if user_id:
+        log_action(user_id, 'logout', 'Logout realizado')
+    
+    session.clear()
+    flash('Você saiu da sua conta.', 'info')
+    return redirect(url_for('index'))
+
+# ----------------- Carrinho -----------------
 @app.route('/cart')
 def cart():
-    # cart is a list of dicts: [{'id': int, 'qty': int, 'price': float, 'name': str}, ...]
     cart = session.get('cart', [])
     if not cart:
         return render_template('cart.html', items=[], total=0)
 
-    # Ensure ids are ints and fetch current product info
     ids = [int(item['id']) for item in cart]
     conn = get_db()
     cur = conn.cursor(dictionary=True)
     query = "SELECT id, name, price FROM products WHERE id IN (%s)" % (','.join(['%s']*len(ids)))
     cur.execute(query, tuple(ids))
     products = {p['id']: p for p in cur.fetchall()}
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     items = []
     total = 0.0
@@ -186,22 +227,35 @@ def cart():
 @app.route('/cart/add/<int:product_id>', methods=['POST'])
 def add_to_cart(product_id):
     qty = int(request.form.get('qty', 1))
+    
+    if qty <= 0:
+        flash('Quantidade inválida.', 'warning')
+        return redirect(request.referrer or url_for('index'))
 
     conn = get_db()
     cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT id, name, price FROM products WHERE id = %s", (product_id,))
+    cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s", (product_id,))
     product = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not product:
         flash('Produto não encontrado.', 'danger')
         return redirect(url_for('index'))
+    
+    if product['stock'] < qty:
+        flash(f'Estoque insuficiente. Disponível: {product["stock"]} unidades.', 'warning')
+        return redirect(request.referrer or url_for('index'))
 
     cart = session.get('cart', [])
     found = False
     for item in cart:
         if int(item['id']) == int(product_id):
-            item['qty'] = int(item.get('qty', 0)) + qty
+            new_qty = int(item.get('qty', 0)) + qty
+            if new_qty > product['stock']:
+                flash(f'Estoque insuficiente. Disponível: {product["stock"]} unidades.', 'warning')
+                return redirect(request.referrer or url_for('index'))
+            item['qty'] = new_qty
             found = True
             break
 
@@ -225,6 +279,29 @@ def remove_from_cart(product_id):
     flash('Produto removido do carrinho.', 'info')
     return redirect(url_for('cart'))
 
+@app.route('/cart/update/<int:product_id>', methods=['POST'])
+def update_cart(product_id):
+    qty = int(request.form.get('qty', 1))
+    
+    if qty <= 0:
+        return remove_from_cart(product_id)
+    
+    cart = session.get('cart', [])
+    for item in cart:
+        if int(item['id']) == int(product_id):
+            item['qty'] = qty
+            break
+    
+    session['cart'] = cart
+    flash('Carrinho atualizado.', 'success')
+    return redirect(url_for('cart'))
+
+# Continue na Parte 2...
+"""
+PARTE 2/3 - Checkout, Pedidos, Perfil e Manutenção
+Cole este código após a Parte 1
+"""
+
 # ----------------- Checkout -----------------
 @app.route('/checkout', methods=['POST'])
 @login_required
@@ -236,44 +313,57 @@ def checkout():
 
     payment_method = request.form.get('payment_method') or 'dinheiro'
 
-    # --- Verifica se produtos do carrinho ainda existem no banco ---
     ids = [int(item['id']) for item in cart]
     conn = get_db()
     cur = conn.cursor(dictionary=True)
 
     if not ids:
         flash('Seu carrinho está vazio.', 'warning')
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return redirect(url_for('cart'))
 
-    query = "SELECT id, price FROM products WHERE id IN (%s)" % (','.join(['%s'] * len(ids)))
+    query = "SELECT id, price, stock FROM products WHERE id IN (%s)" % (','.join(['%s'] * len(ids)))
     cur.execute(query, tuple(ids))
-    products = {p['id']: float(p['price']) for p in cur.fetchall()}
+    products = {p['id']: {'price': float(p['price']), 'stock': int(p['stock'])} for p in cur.fetchall()}
 
-    # Remove produtos que não existem mais
+    # Verifica estoque e produtos existentes
     updated_cart = []
+    total = 0.0
+    stock_error = False
+    
     for item in cart:
         pid = int(item['id'])
-        if pid in products:
-            updated_cart.append(item)
-        else:
-            flash(f"O produto com ID {pid} não existe mais. Ele foi removido do carrinho.", "warning")
+        qty = int(item.get('qty', 1))
+        
+        if pid not in products:
+            flash(f"O produto com ID {pid} não existe mais.", "warning")
+            continue
+        
+        if products[pid]['stock'] < qty:
+            flash(f"Estoque insuficiente para o produto {item.get('name', 'ID ' + str(pid))}.", "warning")
+            stock_error = True
+            continue
+        
+        price = products[pid]['price']
+        total += price * qty
+        updated_cart.append(item)
 
     if len(updated_cart) != len(cart):
         session['cart'] = updated_cart
-        cur.close(); conn.close()
-        flash("Alguns produtos foram removidos do carrinho por não estarem mais disponíveis.", "danger")
+        cur.close()
+        conn.close()
+        if stock_error:
+            flash("Alguns produtos têm estoque insuficiente.", "danger")
         return redirect(url_for('cart'))
 
-    # --- Calcula total baseado nos preços atuais do DB ---
-    total = 0.0
-    for item in updated_cart:
-        pid = int(item['id'])
-        qty = int(item.get('qty', 1))
-        price = products.get(pid, float(item.get('price', 0)))
-        total += price * qty
+    if not updated_cart:
+        flash('Seu carrinho está vazio.', 'warning')
+        cur.close()
+        conn.close()
+        return redirect(url_for('cart'))
 
-    # --- Cria pedido ---
+    # Cria pedido
     cur2 = conn.cursor()
     cur2.execute(
         "INSERT INTO orders (user_id, total, payment_method, status) VALUES (%s, %s, %s, %s)",
@@ -281,21 +371,30 @@ def checkout():
     )
     order_id = cur2.lastrowid
 
-    # --- Insere itens ---
+    # Insere itens e atualiza estoque
     for item in updated_cart:
         pid = int(item['id'])
         qty = int(item['qty'])
-        price = products.get(pid, float(item.get('price', 0)))
+        price = products[pid]['price']
+        
         cur2.execute(
             "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s,%s,%s,%s)",
             (order_id, pid, qty, price)
         )
+        
+        # Atualiza estoque
+        cur2.execute(
+            "UPDATE products SET stock = stock - %s WHERE id = %s",
+            (qty, pid)
+        )
 
     conn.commit()
-    cur2.close(); cur.close(); conn.close()
+    log_action(session['user']['id'], 'checkout', f'Pedido {order_id} criado')
+    cur2.close()
+    cur.close()
+    conn.close()
     session['cart'] = []
 
-    # --- Redireciona conforme método de pagamento ---
     if payment_method == 'pix':
         flash('Pedido criado! Vá para o pagamento via Pix.', 'info')
         return redirect(url_for('pix_payment', order_id=order_id))
@@ -303,61 +402,274 @@ def checkout():
     flash('Compra finalizada com sucesso!', 'success')
     return redirect(url_for('confirmed', order_id=order_id))
 
+# ----------------- Pedidos -----------------
+@app.route('/orders')
+@login_required
+def orders():
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM orders WHERE user_id = %s ORDER BY created_at DESC", 
+                (session['user']['id'],))
+    orders = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('orders.html', orders=orders)
 
+@app.route('/history')
+@login_required
+def history():
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT id, total, payment_method, status, created_at
+        FROM orders
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (session['user']['id'],))
+    orders = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('history.html', title='Histórico de Compras', orders=orders)
 
-# ----------------- Maintenance -----------------
+@app.route('/confirmed/<int:order_id>')
+@login_required
+def confirmed(order_id):
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM orders WHERE id = %s AND user_id = %s", 
+                (order_id, session['user']['id']))
+    order = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not order:
+        flash('Pedido não encontrado.', 'danger')
+        return redirect(url_for('index'))
+    return render_template('confirmed.html', order=order)
+
+# ----------------- Pagamento Pix -----------------
+@app.route('/pix_payment/<int:order_id>')
+@login_required
+def pix_payment(order_id):
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM orders WHERE id = %s AND user_id = %s", 
+                (order_id, session['user']['id']))
+    order = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if not order:
+        flash('Pedido não encontrado.', 'danger')
+        return redirect(url_for('index'))
+
+    pix_data = f"pix://pagamento?valor={order['total']:.2f}&pedido={order_id}"
+    qr = qrcode.make(pix_data)
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    qr_b64 = base64.b64encode(buffer.getvalue()).decode()
+
+    return render_template('pix_payment.html', order=order, qr_b64=qr_b64)
+
+@app.route('/confirm_pix/<int:order_id>', methods=['POST'])
+@login_required
+def confirm_pix(order_id):
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM orders WHERE id=%s AND user_id=%s", 
+                (order_id, session['user']['id']))
+    order = cur.fetchone()
+    
+    if not order:
+        cur.close()
+        conn.close()
+        flash("Pedido não encontrado.", "danger")
+        return redirect(url_for('index'))
+
+    cur2 = conn.cursor()
+    cur2.execute("UPDATE orders SET status='concluido' WHERE id=%s", (order_id,))
+    conn.commit()
+    log_action(session['user']['id'], 'confirm_pix', f'Pedido {order_id}')
+    cur2.close()
+    cur.close()
+    conn.close()
+
+    flash("Pagamento confirmado com sucesso!", "success")
+    return redirect(url_for('confirmed', order_id=order_id))
+
+@app.route('/qrcode/<path:data>')
+def generate_qrcode(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
+
+# ----------------- Perfil do Usuário -----------------
+@app.route('/profile')
+@login_required
+def profile():
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM maintenance WHERE user_id = %s ORDER BY created_at DESC", 
+                (session['user']['id'],))
+    maints = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('profile.html', maintenances=maints)
+
+@app.route('/profile/change_password', methods=['GET','POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current = request.form.get('current_password', '')
+        new_pw = request.form.get('new_password', '')
+        confirm_pw = request.form.get('confirm_password', '')
+
+        if not current or not new_pw or not confirm_pw:
+            flash('Preencha todos os campos.', 'warning')
+            return redirect(url_for('change_password'))
+
+        if len(new_pw) < 6:
+            flash('A nova senha deve ter no mínimo 6 caracteres.', 'warning')
+            return redirect(url_for('change_password'))
+
+        if new_pw != confirm_pw:
+            flash('A nova senha e a confirmação não coincidem.', 'danger')
+            return redirect(url_for('change_password'))
+
+        conn = get_db()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT password_hash FROM users WHERE id = %s", (session['user']['id'],))
+        user = cur.fetchone()
+
+        if not user or not check_password_hash(user['password_hash'], current):
+            flash('Senha atual incorreta.', 'danger')
+            cur.close()
+            conn.close()
+            return redirect(url_for('change_password'))
+
+        hashed = generate_password_hash(new_pw)
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed, session['user']['id']))
+        conn.commit()
+        log_action(session['user']['id'], 'change_password', 'Senha alterada')
+        cur.close()
+        conn.close()
+
+        flash('Senha alterada com sucesso!', 'success')
+        return redirect(url_for('profile'))
+
+    return render_template('change_password.html')
+
+# ----------------- Manutenção -----------------
 @app.route('/maintenance/request', methods=['GET','POST'])
 @login_required
 def request_maintenance():
     if request.method == 'POST':
         title = request.form.get('title','').strip()
         desc = request.form.get('description','').strip()
+        
         if not title or not desc:
             flash('Preencha título e descrição.', 'warning')
             return redirect(url_for('request_maintenance'))
-        conn = get_db(); cur = conn.cursor()
+        
+        conn = get_db()
+        cur = conn.cursor()
         cur.execute("INSERT INTO maintenance (user_id,title,description,status) VALUES (%s,%s,%s,%s)",
                     (session['user']['id'], title, desc, 'pendente'))
         conn.commit()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         log_action(session['user']['id'], 'request_maintenance', title)
         flash('Solicitação enviada com sucesso.', 'success')
         return redirect(url_for('profile'))
     return render_template('request_maintenance.html')
 
-# ----------------- Profile -----------------
-@app.route('/profile')
+# ----------------- Chat -----------------
+@app.route('/chat')
 @login_required
-def profile():
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM maintenance WHERE user_id = %s ORDER BY created_at DESC", (session['user']['id'],))
-    maints = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('profile.html', maintenances=maints)
+def chat():
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT cm.*, u.name AS user_name
+        FROM chat_messages cm
+        JOIN users u ON cm.user_id = u.id
+        ORDER BY cm.created_at ASC
+        LIMIT 100
+    """)
+    messages = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('chat.html', messages=messages)
 
-# ----------------- Admin -----------------
+@app.route('/chat/send', methods=['POST'])
+@login_required
+def send_chat():
+    message = request.form.get('message','').strip()
+    if not message:
+        flash('Digite uma mensagem antes de enviar.', 'warning')
+        return redirect(url_for('chat'))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO chat_messages (user_id, user_name, message) VALUES (%s,%s,%s)",
+                (session['user']['id'], session['user']['name'], message))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return redirect(url_for('chat'))
+
+# Continue na Parte 3...
+"""
+PARTE 3/3 - Painel Administrativo e Inicialização
+Cole este código após a Parte 2
+"""
+
+# ----------------- Admin Panel -----------------
 @app.route('/admin')
 @admin_required
 def admin_panel():
-    return render_template('admin_panel.html')
+    return render_template('admin_panel.html', title='Painel Administrativo')
 
+# ----------------- Admin - Produtos -----------------
 @app.route('/admin/products')
 @admin_required
 def admin_products():
-    conn = get_db(); cur = conn.cursor(dictionary=True)
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
     cur.execute("SELECT * FROM products ORDER BY id DESC")
     products = cur.fetchall()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return render_template('admin_products.html', products=products)
 
-# create product (upload or URL)
 @app.route('/admin/products/create', methods=['POST'])
 @admin_required
 def admin_create_product():
-    name = request.form['name']
-    description = request.form.get('description', '')
-    price = float(request.form['price'])
-    stock = int(request.form['stock'])
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    price = request.form.get('price', 0)
+    stock = request.form.get('stock', 0)
+    category = request.form.get('category', '').strip()
+    
+    if not name or not price:
+        flash('Nome e preço são obrigatórios.', 'warning')
+        return redirect(url_for('admin_products'))
+    
+    try:
+        price = float(price)
+        stock = int(stock)
+    except ValueError:
+        flash('Preço ou estoque inválido.', 'warning')
+        return redirect(url_for('admin_products'))
 
     image_file = request.files.get('image_file')
     image_url = request.form.get('image_url') or None
@@ -369,27 +681,37 @@ def admin_create_product():
         image_file.save(image_path)
         image_filename = filename
 
-    final_image = image_filename if image_filename else (image_url if image_url else None)
+    final_image = image_filename if image_filename else image_url
 
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO products (name, description, price, stock, image_url)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (name, description, price, stock, final_image))
+        INSERT INTO products (name, description, price, stock, category, image_url)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (name, description, price, stock, category, final_image))
     conn.commit()
-    cursor.close(); conn.close()
+    log_action(session['user']['id'], 'create_product', name)
+    cursor.close()
+    conn.close()
 
     flash('Produto adicionado com sucesso!', 'success')
     return redirect(url_for('admin_products'))
 
-# edit single product (used by form that edits one product)
 @app.route('/admin/products/edit/<int:product_id>', methods=['POST'])
 @admin_required
 def admin_edit_product(product_id):
-    name = request.form['name']
-    price = float(request.form.get('price', 0))
-    stock = int(request.form.get('stock', 0))
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    price = request.form.get('price', 0)
+    stock = request.form.get('stock', 0)
+    category = request.form.get('category', '').strip()
+    
+    try:
+        price = float(price)
+        stock = int(stock)
+    except ValueError:
+        flash('Preço ou estoque inválido.', 'warning')
+        return redirect(url_for('admin_products'))
 
     image_file = request.files.get('image_file')
     image_url = request.form.get('image_url') or None
@@ -405,209 +727,40 @@ def admin_edit_product(product_id):
     cursor = db.cursor()
     cursor.execute("""
         UPDATE products 
-        SET name=%s, price=%s, stock=%s, image_url=%s
+        SET name=%s, description=%s, price=%s, stock=%s, category=%s, image_url=%s
         WHERE id=%s
-    """, (name, price, stock, image_filename, product_id))
+    """, (name, description, price, stock, category, image_filename, product_id))
     db.commit()
-    cursor.close(); db.close()
+    log_action(session['user']['id'], 'edit_product', f'{product_id} - {name}')
+    cursor.close()
+    db.close()
 
     flash('Produto atualizado com sucesso!', 'success')
     return redirect(url_for('admin_products'))
 
-# 🔹 Rota: excluir produto (Admin)
 @app.route('/admin/products/delete/<int:product_id>', methods=['POST'])
 @admin_required
 def admin_delete_product(product_id):
     conn = get_db()
     cur = conn.cursor()
     try:
-        # 1) remover order_items que usam esse produto (se existir)
         cur.execute("DELETE FROM order_items WHERE product_id = %s", (product_id,))
-        # 2) remover o produto
         cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
         conn.commit()
-
-        # log (tenta pegar user id da sessão)
-        try:
-            user_id = session['user']['id']
-        except Exception:
-            user_id = None
-        log_action(user_id, 'delete_product', f'{product_id}')
-
-        flash('Produto excluído com sucesso (itens de pedido relacionados também removidos).', 'info')
+        log_action(session['user']['id'], 'delete_product', f'{product_id}')
+        flash('Produto excluído com sucesso.', 'info')
     except mysql.connector.IntegrityError as e:
         conn.rollback()
-        flash('Não foi possível excluir o produto por restrição de integridade: ' + str(e), 'danger')
+        flash('Não foi possível excluir o produto: ' + str(e), 'danger')
     except Exception as e:
         conn.rollback()
         flash('Erro ao excluir produto: ' + str(e), 'danger')
     finally:
-        try:
-            cur.close(); conn.close()
-        except:
-            pass
+        cur.close()
+        conn.close()
 
     return redirect(url_for('admin_products'))
 
-
-
-
-
-
-
-# Admin maintenance and orders (same as before)
-@app.route('/admin/maintenance')
-@admin_required
-def admin_maintenance():
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT m.*, u.email AS user_email, u.name AS user_name FROM maintenance m JOIN users u ON m.user_id = u.id ORDER BY m.created_at DESC")
-    items = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('admin_maintenance.html', maintenances=items)
-
-@app.route('/admin/maintenance/update/<int:mid>', methods=['POST'])
-@admin_required
-def admin_update_maintenance(mid):
-    status = request.form.get('status','pendente')
-    expected_delivery = request.form.get('expected_delivery') or None
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("UPDATE maintenance SET status=%s, expected_delivery=%s WHERE id=%s", (status, expected_delivery, mid))
-    conn.commit()
-    log_action(session['user']['id'], 'update_maintenance', f'{mid} -> {status}')
-    cur.close(); conn.close()
-    flash('Manutenção atualizada.', 'success')
-    return redirect(url_for('admin_maintenance'))
-
-
-
-# create_admin utility (keep as you had)
-@app.route('/create_admin', methods=['POST'])
-def create_admin():
-    secret = request.form.get('secret')
-    if secret != 'CREATE_ADMIN_SECRET':
-        return 'Forbidden', 403
-    name = request.form.get('name')
-    email = request.form.get('email')
-    password = request.form.get('password')
-    hashed = generate_password_hash(password)
-    conn = get_db(); cur = conn.cursor()
-    try:
-        cur.execute("INSERT INTO users (name,email,password_hash,is_admin) VALUES (%s,%s,%s,%s)", (name,email,hashed,1))
-        conn.commit()
-        return 'Admin criado'
-    except Exception as e:
-        return str(e), 400
-    finally:
-        cur.close(); conn.close()
-
-# QR code endpoint (raw image)
-@app.route('/qrcode/<path:data>')
-def generate_qrcode(data):
-    # data may be urlencoded; we'll just create QR from the path param
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=8,
-        border=2,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return send_file(buf, mimetype='image/png')
-
-# Confirmed page
-@app.route('/confirmed/<int:order_id>')
-@login_required
-def confirmed(order_id):
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM orders WHERE id = %s AND user_id = %s", (order_id, session['user']['id']))
-    order = cur.fetchone()
-    cur.close(); conn.close()
-    if not order:
-        flash('Pedido não encontrado.', 'danger')
-        return redirect(url_for('index'))
-    return render_template('confirmed.html', order=order)
-
-# Order history (user)
-@app.route('/history')
-@login_required
-def history():
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT id, total, payment_method, status, created_at
-        FROM orders
-        WHERE user_id = %s
-        ORDER BY created_at DESC
-    """, (session['user']['id'],))
-    orders = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('history.html', title='Histórico de Compras', orders=orders)
-
-# Pix payment page (shows QR and confirm button)
-@app.route('/pix_payment/<int:order_id>')
-@login_required
-def pix_payment(order_id):
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM orders WHERE id = %s AND user_id = %s", (order_id, session['user']['id']))
-    order = cur.fetchone()
-    cur.close(); conn.close()
-    if not order:
-        flash('Pedido não encontrado.', 'danger')
-        return redirect(url_for('index'))
-
-    pix_data = f"pix://pagamento?valor={order['total']:.2f}&pedido={order_id}"
-
-    # generate qrcode bytes and base64
-    qr = qrcode.make(pix_data)
-    buffer = BytesIO()
-    qr.save(buffer, format="PNG")
-    qr_b64 = base64.b64encode(buffer.getvalue()).decode()
-
-    return render_template('pix_payment.html', order=order, qr_b64=qr_b64)
-
-# confirm pix route (POST from pix_payment page)
-@app.route('/confirm_pix/<int:order_id>', methods=['POST'])
-@login_required
-def confirm_pix(order_id):
-    user = session.get('user')
-    if not user:
-        return redirect(url_for('login'))
-
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM orders WHERE id=%s AND user_id=%s", (order_id, user['id']))
-    order = cur.fetchone()
-    if not order:
-        cur.close(); conn.close()
-        flash("Pedido não encontrado.", "danger")
-        return redirect(url_for('index'))
-
-    cur2 = conn.cursor()
-    cur2.execute("UPDATE orders SET status='concluido' WHERE id=%s", (order_id,))
-    conn.commit()
-    cur2.close(); cur.close(); conn.close()
-
-    flash("Pagamento confirmado com sucesso!", "success")
-    return redirect(url_for('confirmed', order_id=order_id))
-
-# user order list
-@app.route('/orders')
-@login_required
-def orders():
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM orders WHERE user_id = %s ORDER BY created_at DESC", (session['user']['id'],))
-    orders = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('orders.html', orders=orders)
-
-# ✅ Atualizar todos os produtos de uma vez
 @app.route('/admin/products/update_all', methods=['POST'])
 @admin_required
 def admin_update_all_products():
@@ -615,7 +768,6 @@ def admin_update_all_products():
     cur = conn.cursor()
 
     try:
-        # Percorrer todos os produtos enviados no formulário
         cur.execute("SELECT id FROM products")
         ids = [str(r[0]) for r in cur.fetchall()]
 
@@ -635,7 +787,6 @@ def admin_update_all_products():
                 image_file.save(image_path)
                 image_url = filename
 
-            # Atualizar no banco
             cur.execute("""
                 UPDATE products
                 SET name=%s, description=%s, price=%s, stock=%s, category=%s,
@@ -644,12 +795,12 @@ def admin_update_all_products():
             """, (name, description, price, stock, category, image_url, pid))
 
         conn.commit()
+        log_action(session['user']['id'], 'update_all_products', 'Atualização em massa')
         flash("Produtos atualizados com sucesso!", "success")
 
     except Exception as e:
         conn.rollback()
-        print("Erro:", e)
-        flash("Erro ao atualizar produtos.", "error")
+        flash("Erro ao atualizar produtos: " + str(e), "danger")
 
     finally:
         cur.close()
@@ -657,6 +808,41 @@ def admin_update_all_products():
 
     return redirect(url_for('admin_products'))
 
+# ----------------- Admin - Manutenção -----------------
+@app.route('/admin/maintenance')
+@admin_required
+def admin_maintenance():
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT m.*, u.email AS user_email, u.name AS user_name 
+        FROM maintenance m 
+        JOIN users u ON m.user_id = u.id 
+        ORDER BY m.created_at DESC
+    """)
+    items = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template('admin_maintenance.html', maintenances=items)
+
+@app.route('/admin/maintenance/update/<int:mid>', methods=['POST'])
+@admin_required
+def admin_update_maintenance(mid):
+    status = request.form.get('status','pendente')
+    expected_delivery = request.form.get('expected_delivery') or None
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE maintenance SET status=%s, expected_delivery=%s WHERE id=%s", 
+                (status, expected_delivery, mid))
+    conn.commit()
+    log_action(session['user']['id'], 'update_maintenance', f'{mid} -> {status}')
+    cur.close()
+    conn.close()
+    flash('Manutenção atualizada.', 'success')
+    return redirect(url_for('admin_maintenance'))
+
+# ----------------- Admin - Pedidos -----------------
 @app.route("/admin/orders")
 @admin_required
 def admin_orders():
@@ -676,95 +862,68 @@ def admin_orders():
         ORDER BY o.created_at DESC
     """)
     orders = cur.fetchall()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return render_template("admin_orders.html", orders=orders)
 
-
-# Página do chat
-@app.route('/chat')
-@login_required
-def chat():
-    conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT cm.*, u.name AS user_name
-        FROM chat_messages cm
-        JOIN users u ON cm.user_id = u.id
-        ORDER BY cm.created_at ASC
-        LIMIT 100
-    """)
-    messages = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('chat.html', messages=messages)
-
-# Enviar mensagem
-@app.route('/chat/send', methods=['POST'])
-@login_required
-def send_chat():
-    message = request.form.get('message','').strip()
-    if not message:
-        flash('Digite uma mensagem antes de enviar.', 'warning')
-        return redirect(url_for('chat'))
-
+@app.route('/admin/orders/update/<int:order_id>', methods=['POST'])
+@admin_required
+def admin_update_order(order_id):
+    status = request.form.get('status', 'pendente')
+    
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO chat_messages (user_id, user_name, message) VALUES (%s,%s,%s)",
-                (session['user']['id'], session['user']['name'], message))
+    cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, order_id))
     conn.commit()
-    cur.close(); conn.close()
-    return redirect(url_for('chat'))
+    log_action(session['user']['id'], 'update_order', f'Pedido {order_id} -> {status}')
+    cur.close()
+    conn.close()
+    
+    flash('Status do pedido atualizado.', 'success')
+    return redirect(url_for('admin_orders'))
 
-@app.route('/categoria/<string:name>')
-def category(name):
+# ----------------- Utilitário: Criar Admin -----------------
+@app.route('/create_admin', methods=['POST'])
+def create_admin():
+    secret = request.form.get('secret')
+    if secret != 'CREATE_ADMIN_SECRET':
+        return 'Forbidden', 403
+    
+    name = request.form.get('name')
+    email = request.form.get('email')
+    password = request.form.get('password')
+    
+    if not name or not email or not password:
+        return 'Campos obrigatórios faltando', 400
+    
+    hashed = generate_password_hash(password)
     conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM products WHERE category = %s ORDER BY created_at DESC", (name,))
-    products = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('category.html', products=products, category_name=name)
-
-
-@app.route('/profile/change_password', methods=['GET','POST'])
-@login_required
-def change_password():
-    if request.method == 'POST':
-        current = request.form.get('current_password', '')
-        new_pw = request.form.get('new_password', '')
-        confirm_pw = request.form.get('confirm_password', '')
-
-        if not current or not new_pw or not confirm_pw:
-            flash('Preencha todos os campos.', 'warning')
-            return redirect(url_for('change_password'))
-
-        if new_pw != confirm_pw:
-            flash('A nova senha e a confirmação não coincidem.', 'danger')
-            return redirect(url_for('change_password'))
-
-        conn = get_db()
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT password_hash FROM users WHERE id = %s", (session['user']['id'],))
-        user = cur.fetchone()
-
-        if not user or not check_password_hash(user['password_hash'], current):
-            flash('Senha atual incorreta.', 'danger')
-            cur.close(); conn.close()
-            return redirect(url_for('change_password'))
-
-        hashed = generate_password_hash(new_pw)
-        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed, session['user']['id']))
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO users (name,email,password_hash,is_admin) VALUES (%s,%s,%s,%s)", 
+                   (name, email, hashed, 1))
         conn.commit()
-        cur.close(); conn.close()
+        log_action(None, 'create_admin', f'Admin {email} criado')
+        return 'Admin criado com sucesso'
+    except mysql.connector.IntegrityError:
+        return 'Email já cadastrado', 400
+    except Exception as e:
+        return str(e), 400
+    finally:
+        cur.close()
+        conn.close()
 
-        flash('Senha alterada com sucesso!', 'success')
-        return redirect(url_for('profile'))
+# ----------------- Error Handlers -----------------
+@app.errorhandler(404)
+def not_found(e):
+    flash('Página não encontrada.', 'warning')
+    return redirect(url_for('index'))
 
-    return render_template('change_password.html')
+@app.errorhandler(500)
+def internal_error(e):
+    flash('Erro interno do servidor. Tente novamente.', 'danger')
+    return redirect(url_for('index'))
 
+# ----------------- Inicialização -----------------
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-@app.route("/admin")
-@login_required  # se quiser restringir
-def admin_panel():
-    return render_template("admin.html", title="Painel Administrativo")
